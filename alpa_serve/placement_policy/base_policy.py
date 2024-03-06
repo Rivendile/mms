@@ -188,6 +188,7 @@ class PlacementEvaluator:
             stats = ray.get(stats)
         return stats
 
+    # todo: change for llm
     @staticmethod
     def get_goodput_simulation(sol: ModelPlacement,
                                model_datas: List[ModelData],

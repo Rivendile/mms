@@ -1,6 +1,6 @@
 from alpa_serve.trace import Trace
 # azure_v2_trace_dir = "/home/ubuntu/efs/mms/dataset/azure_v2.pkl"
-azure_v2_trace_dir = "/home/ubuntu/azure_v2.pkl"
+azure_v2_trace_dir = "/data/zyh/mms/dataset/azure_v2.pkl"
 azure_v2_trace = Trace("azure_v2", azure_v2_trace_dir)
 num_models = 30
 model_names = [f"m{i}" for i in range(num_models)]

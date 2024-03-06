@@ -21,6 +21,8 @@ ServingCase = namedtuple("ServingCase",
 GB = 1 << 30
 eps = 1e-6
 inf = 1e100
+num_token_normal_mean = 20
+num_token_normal_var = 10
 
 
 def build_logger(name="alpa_serve"):

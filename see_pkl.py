@@ -1,6 +1,6 @@
 import pickle
 
-path = "profiling_result.pkl"
+path = "profiling_result_llama_opt.pkl"
 with open(path, "rb") as handle:
     tracelines = pickle.load(handle)
 

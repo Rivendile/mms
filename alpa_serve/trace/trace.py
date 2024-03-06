@@ -154,10 +154,12 @@ class TraceReplay:
                  rate_scale_factor=1.0,
                  cv_scale_factor=1.0,
                  time_scale_factor=1.0,
-                 replication_factor=1):
+                 replication_factor=1,
+                 num_tokens=[]):
         """A TraceReplay specifies the traffic arrival pattern of a model."""
         self.model = model
         self.arrivals = arrivals
+        self.num_tokens = num_tokens
 
         # other generation-time information
         self.trace_name = trace_name
@@ -182,8 +184,11 @@ class TraceReplay:
             self._rate = 0
             self._cv = 0
 
+
     def to_workload(self, slo: float):
-        return Workload(self.arrivals, [Request(self.model, None, slo, i, {})
+        assert len(self.arrivals)>0
+        assert len(self.num_tokens)>0
+        return Workload(self.arrivals, [Request(self.model, None, slo, i, self.num_tokens[i],{})
                                         for i in range(len(self.arrivals))])
 
     def report_stats(self):
@@ -285,6 +290,11 @@ class Trace:
             raise NotImplementedError(f"To be implemented for {trace_name}")
         else:
             raise RuntimeError("Choose trace from `azure_v1 | azure_v2 | alibaba`")
+        # print(self.function_histogram)
+        # exit()
+        # for function_name, val in self.function_histogram.items():
+        #     print(len(val), flush=True)
+            # exit()
 
     @staticmethod
     def timestr_to_dhm(time_str):
@@ -430,7 +440,7 @@ class Trace:
                                                                     arrival_distribution,
                                                                     rate_scale_factor,
                                                                     cv_scale_factor)
-        elif self.trace_name == "azure_v2":
+        elif self.trace_name == "azure_v2":  # not check yet
             # Trace are exact arrivals
             # 1. Convert function trace to model trace
             model_arrivals = OrderedDict()
@@ -495,12 +505,15 @@ class Trace:
         for m in distributions:
             arrivals = []
             arrival_distribution_params = []
+            num_tokens = []
             for i, distribution in enumerate(distributions[m]):
                 if distribution is None:
                     arrival_distribution_params.append(None)
                     continue
                 start = i * interval_seconds + start_timestamp_seconds
-                arrivals.extend(distribution.generate_arrivals(start, interval_seconds, seed))
+                arrivals_, num_tokens_ = distribution.generate_arrivals(start, interval_seconds, seed)
+                arrivals.extend(arrivals_)
+                num_tokens.extend(num_tokens_)
                 # if DEBUG:
                 #     arrivals.extend(distribution.generate_arrivals(0, 1.0e9, seed))
                 #     self.visualize_inter_arrival(np.array(arrivals), "test")
@@ -516,7 +529,8 @@ class Trace:
                                      arrival_distribution_params=arrival_distribution_params,
                                      rate_scale_factor=rate_scale_factor,
                                      cv_scale_factor=cv_scale_factor,
-                                     time_scale_factor=time_scale_factor)
+                                     time_scale_factor=time_scale_factor,
+                                     num_tokens=num_tokens)
 
         return replays
 
@@ -582,7 +596,7 @@ class Trace:
                     if arrival_distribution == "exponential":
                         distributions[model].append(PoissonProcess(arrival_rate))
                     else:
-                        distributions[model].append(GammaProcess(arrival_rate, cv_scale_factor))
+                        distributions[model].append(GammaProcess(arrival_rate, cv_scale_factor, "Normal"))
         return distributions
 
     def estimate_parameters_with_arrivals(self,

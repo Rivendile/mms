@@ -14,7 +14,7 @@ from alpa_serve.placement_policy import (ClusterEnv, ModelData,
     SelectiveReplicationSearch, SelectiveReplicationUniform,
     SelectiveReplicationReplacement, ModelParallelismILP,
     ModelParallelismGreedy, ModelParallelismSearch,
-    ModelParallelismEqual)
+    ModelParallelismEqual, AlpaserveLLMGreedy)
 from alpa_serve.profiling import ProfilingDatabase
 from alpa_serve.trace import Trace, report_group_stats
 from alpa_serve.util import GB, write_tsv, ServingCase
@@ -32,7 +32,7 @@ EqualModelCase = namedtuple("EqualModelCase", [
 
 def get_equal_model_serving_case(case, prof_database=None):
     if prof_database is None:
-        prof_database = ProfilingDatabase("profiling_result.pkl")
+        prof_database = ProfilingDatabase("/data/zyh/mms/profiling_result.pkl")
 
     (exp_name, num_devices, mem_budget, model_type, num_models,
      total_rate, rate_distribution, arrival_process, arrival_process_kwargs,
@@ -45,6 +45,11 @@ def get_equal_model_serving_case(case, prof_database=None):
     model_types = [model_type] * num_models
     if model_type == "bert-103.5b":
         single_latency = {model_type: 4.6}
+    # elif model_type == "llama2-7b":
+    #     # Todo: fake data
+    #     single_latency = {
+    #     model_type: sum(prof_database.get("bert-1.3b").para_dict[ParallelConfig(1,1,1)
+    #     ].latency[1]) for model_type in set(model_types)}
     else:
         single_latency = {
         model_type: sum(prof_database.get(model_type).para_dict[ParallelConfig(1,1,1)
@@ -83,7 +88,7 @@ def get_equal_model_serving_case(case, prof_database=None):
     train_workload = None
     if arrival_process == "gamma":
         arrival_processes = [
-            GammaProcess(rates[i], arrival_process_kwargs["cv"])
+            GammaProcess(rates[i], arrival_process_kwargs["cv"], "Normal")
             for i in range(num_models)
         ]
     elif arrival_process == "uniform_mmpp":
@@ -200,8 +205,12 @@ def get_equal_model_serving_case(case, prof_database=None):
         num_models = len(model_names)
         model_datas = []
         for i in range(num_models):
+            # if model_types[i]=='llama2-7b':
+            #     model_datas.append(ModelData(model_names[i], slos[i], rates[i], cvs[i],
+            #                              prof_database.get("bert-1.3b")))
+            # else:
             model_datas.append(ModelData(model_names[i], slos[i], rates[i], cvs[i],
-                                         prof_database.get(model_types[i])))
+                                        prof_database.get(model_types[i])))
 
         if policy_name == "sr-ilp":
             policy = SelectiveReplicationILP(verbose=1)
@@ -215,6 +224,8 @@ def get_equal_model_serving_case(case, prof_database=None):
             policy = SelectiveReplicationSearch(verbose=1)
         elif policy_name == "sr-uniform":
             policy = SelectiveReplicationUniform(verbose=1)
+        elif "llm-greedy" in policy_name:
+            policy = AlpaserveLLMGreedy(verbose=1)
         elif policy_name == "mp-ilp":
             policy = ModelParallelismILP(verbose=1)
         elif "mp-search" in policy_name:

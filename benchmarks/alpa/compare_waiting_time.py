@@ -16,10 +16,10 @@ def pipeline_waiting_time(workload, stage_service_time):
 
 
 if __name__ == "__main__":
-    r_a = GammaProcess(3, 2).generate_workload("a", start=0, duration=1000, seed=10)
-    r_b = GammaProcess(3, 2).generate_workload("b", start=0, duration=1000, seed=11)
-    r_c = GammaProcess(3, 2).generate_workload("c", start=0, duration=1000, seed=12)
-    r_d = GammaProcess(3, 2).generate_workload("d", start=0, duration=1000, seed=13)
+    r_a = GammaProcess(3, 2, "Normal").generate_workload("a", start=0, duration=1000, seed=10)
+    r_b = GammaProcess(3, 2, "Normal").generate_workload("b", start=0, duration=1000, seed=11)
+    r_c = GammaProcess(3, 2, "Normal").generate_workload("c", start=0, duration=1000, seed=12)
+    r_d = GammaProcess(3, 2, "Normal").generate_workload("d", start=0, duration=1000, seed=13)
 
     # replication 1x
     w1 = waiting_time(r_a + r_b, 0.1)

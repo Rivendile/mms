@@ -8,7 +8,7 @@ from typing import Any, List, Sequence, Dict, Optional
 import numpy as np
 
 from alpa_serve.simulator.util import MMPPSampler
-from alpa_serve.util import to_str_round, eps
+from alpa_serve.util import to_str_round, eps, num_token_normal_mean, num_token_normal_var
 
 
 DEFAULT_WARMUP = 10
@@ -21,6 +21,7 @@ class Request:
     data: Any
     slo: Optional[float]
     idx: int
+    num_tokens : int            # Add, number of output tokens for simulation
     time_stamp: Dict            # debug only
     submit_time: float = None   # This will be filled later
 
@@ -113,7 +114,7 @@ class DeterministicProcess(ArrivalProcess):
 
 class GammaProcess(ArrivalProcess):
     """Gamma arrival process."""
-    def __init__(self, arrival_rate: float, cv: float):
+    def __init__(self, arrival_rate: float, cv: float, tokens_dist: str):
         """Initialize a gamma arrival process.
 
         Args:
@@ -125,6 +126,7 @@ class GammaProcess(ArrivalProcess):
         self.cv_ = cv
         self.shape = 1 / (cv * cv)
         self.scale = cv * cv / arrival_rate
+        self.tokens_dist = tokens_dist
 
     def rate(self):
         return self.rate_
@@ -140,6 +142,8 @@ class GammaProcess(ArrivalProcess):
         pt = 0
 
         ticks = []
+        num_tokens = []
+        assert self.tokens_dist=="Normal"
         cur = start + intervals[0]
         end = start + duration
         while cur < end:
@@ -151,8 +155,13 @@ class GammaProcess(ArrivalProcess):
                 pt = 0
 
             cur += intervals[pt]
+        
+        tokens_data = np.random.normal(num_token_normal_mean, num_token_normal_var, len(ticks))
+        for i in range(tokens_data.size):
+            num_tokens.append(max(1, int(tokens_data[i])))
+        assert len(ticks) == len(num_tokens)
 
-        return ticks
+        return ticks, num_tokens
 
     def generate_workload(self, model_name: str, start: float,
                           duration: float, slo: Optional[float] = None,
@@ -423,7 +432,7 @@ class Workload:
 
 if __name__ == "__main__":
     w1 = PoissonProcess(10).generate_workload("m", start=0, duration=1000, seed=0)
-    w2 = GammaProcess(10, 5).generate_workload("m", start=0, duration=1000, seed=0)
+    w2 = GammaProcess(10, 5, "Normal").generate_workload("m", start=0, duration=1000, seed=0)
 
     w3 = w1 + w2
     print(w3)

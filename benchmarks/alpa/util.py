@@ -14,6 +14,9 @@ def build_logger():
 
 
 def get_model_def(name, is_simulator, prof_database):
+    # if name=='llama2-7b':
+    #     result = prof_database.get("bert-1.3b")
+    # else:
     result = prof_database.get(name)
     if result is None:
         raise ValueError(f"Invalid model name: {name}")

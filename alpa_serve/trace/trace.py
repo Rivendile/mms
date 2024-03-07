@@ -188,7 +188,7 @@ class TraceReplay:
     def to_workload(self, slo: float):
         assert len(self.arrivals)>0
         assert len(self.num_tokens)>0
-        return Workload(self.arrivals, [Request(self.model, None, slo, i, self.num_tokens[i],{})
+        return Workload(self.arrivals, [Request(self.model, None, slo*self.num_tokens[i], i, self.num_tokens[i],{})
                                         for i in range(len(self.arrivals))])
 
     def report_stats(self):

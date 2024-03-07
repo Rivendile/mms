@@ -400,6 +400,79 @@ def replica_placement_fast_greedy(init_sol: ModelPlacement,
 
     return sol
 
+def replica_placement_fast_greedy_llm(init_sol: ModelPlacement,
+                                  model_datas: List[ModelData],
+                                  cluster_env: ClusterEnv,
+                                  workload: Workload,
+                                  evaluator: PlacementEvaluator,
+                                  verbose: int):
+    """Use a fast greedy heuristic to place replicas on groups."""
+    tic = time.time()
+
+    if evaluator is None:
+        evaluator = PlacementEvaluator(model_datas, cluster_env, workload,
+            "fast_simulator", False)
+
+    # Load constants
+    num_models = len(model_datas)
+    num_groups = len(init_sol.group_configs)
+    mem_budget = cluster_env.mem_budget
+    group_configs = init_sol.group_configs
+
+    weight_mem = {}  # Dict[parallel_config -> [model_idx -> weight_mem]]
+    for parallel_config in init_sol.group_configs:
+        weight_mem[parallel_config] = [
+            max(x.profiling_result.para_dict[parallel_config].weight_mem)
+            if parallel_config in x.profiling_result.para_dict
+            else inf
+            for x in model_datas]
+
+    # Greedy placement
+    sol = init_sol
+    it = 0
+
+    while True:
+        stats = evaluator.get_stats([sol])[0]
+        overall_goodput, goodputs, group_num_requests, fullstats = stats
+
+        # Find the most unserved model and the most available group
+        model_num_unserved = [
+            (s.num_requests * (1 - goodput))
+            for s, goodput in zip(fullstats.per_model_stats, goodputs)]
+        #model_num_unserved = [
+        #    (x.rate * (1 - goodput))
+        #    for x, goodput in zip(model_datas, goodputs)]
+        model_ids = np.argsort(model_num_unserved)[::-1]
+        group_ids = np.argsort(group_num_requests)
+        group_mem = [
+            sum(weight_mem[c][m_id] for m_id in group_ms)
+            for c, group_ms in zip(sol.group_configs, sol.group_models)
+        ]
+
+        found = False
+        for g_id in group_ids:
+            c = sol.group_configs[g_id]
+            for m_id in model_ids:
+                if (m_id not in sol.group_models[g_id] and
+                    weight_mem[c][m_id] + group_mem[g_id] <= mem_budget):
+                    found = True
+                    break
+
+            if found:
+                break
+        if not found:
+            break
+
+        sol = sol.add_model(g_id, m_id).normalize()
+
+        if verbose >= 2:
+            print(f"iter: {it}, score: {overall_goodput:.4f}, "
+                  f"elapsed: {time.time() - tic:.2f}, "
+                  f"best placement: {sol}, ")
+        it += 1
+
+    return sol
+
 
 def replica_placement_beam_search(init_sol: ModelPlacement,
                                   model_datas: List[ModelData],

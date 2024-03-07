@@ -32,7 +32,7 @@ EqualModelCase = namedtuple("EqualModelCase", [
 
 def get_equal_model_serving_case(case, prof_database=None):
     if prof_database is None:
-        prof_database = ProfilingDatabase("/data/zyh/mms/profiling_result.pkl")
+        prof_database = ProfilingDatabase("/data/zyh/mms/profiling_result_llama_opt.pkl")
 
     (exp_name, num_devices, mem_budget, model_type, num_models,
      total_rate, rate_distribution, arrival_process, arrival_process_kwargs,
@@ -51,6 +51,9 @@ def get_equal_model_serving_case(case, prof_database=None):
     #     model_type: sum(prof_database.get("bert-1.3b").para_dict[ParallelConfig(1,1,1)
     #     ].latency[1]) for model_type in set(model_types)}
     else:
+        # single_latency = {
+        # model_type: sum(list(prof_database.get(model_type).para_dict[ParallelConfig(1,1,1)
+        # ].latency.values())[0]) for model_type in set(model_types)} # for batching
         single_latency = {
         model_type: sum(prof_database.get(model_type).para_dict[ParallelConfig(1,1,1)
         ].latency[1]) for model_type in set(model_types)}

@@ -14,7 +14,7 @@ from alpa_serve.profiling import ParallelConfig
 from alpa_serve.placement_policy.base_policy import (
     BasePlacementPolicy, ModelData, ClusterEnv, ModelPlacement,
     PlacementEvaluator, gen_train_workload,
-    replica_placement_round_robin,
+    replica_placement_round_robin, replica_placement_fast_greedy_llm,
     replica_placement_fast_greedy, replica_placement_beam_search,
     replica_placement_on_last_group, evolutionary_search)
 from alpa_serve.simulator.controller import simulate_one_case
@@ -86,7 +86,7 @@ class AlpaserveLLMGreedy(BasePlacementPolicy):
         initial_sols = self.enumerate_group_configs_uneven(cluster_env)
 
         if self.parallel_initial_placement:
-            func = ray.remote(replica_placement_fast_greedy).remote
+            func = ray.remote(replica_placement_fast_greedy_llm).remote
             for i in range(len(initial_sols)):
                 initial_sols[i] = func(
                     initial_sols[i], model_datas, cluster_env, train_workload, None,
@@ -94,7 +94,7 @@ class AlpaserveLLMGreedy(BasePlacementPolicy):
             initial_sols = ray.get(initial_sols)
         else:
             for i in range(len(initial_sols)):
-                initial_sols[i] = replica_placement_fast_greedy(
+                initial_sols[i] = replica_placement_fast_greedy_llm(
                     initial_sols[i], model_datas, cluster_env, train_workload, evaluator,
                     self.verbose)
                 #initial_sols[i] = replica_placement_beam_search(

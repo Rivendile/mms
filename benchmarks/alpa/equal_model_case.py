@@ -14,7 +14,7 @@ from alpa_serve.placement_policy import (ClusterEnv, ModelData,
     SelectiveReplicationSearch, SelectiveReplicationUniform,
     SelectiveReplicationReplacement, ModelParallelismILP,
     ModelParallelismGreedy, ModelParallelismSearch,
-    ModelParallelismEqual, AlpaserveLLMGreedy)
+    ModelParallelismEqual, AlpaserveLLMGreedy, AlpaserveLLMReplacement)
 from alpa_serve.profiling import ProfilingDatabase
 from alpa_serve.trace import Trace, report_group_stats
 from alpa_serve.util import GB, write_tsv, ServingCase
@@ -227,8 +227,11 @@ def get_equal_model_serving_case(case, prof_database=None):
             policy = SelectiveReplicationSearch(verbose=1)
         elif policy_name == "sr-uniform":
             policy = SelectiveReplicationUniform(verbose=1)
-        elif "llm-greedy" in policy_name:
+        elif policy_name == "llm-greedy":
             policy = AlpaserveLLMGreedy(verbose=1)
+        elif "llm-greedy-replace" in policy_name:
+            interval = int(policy_name.split("-")[3])
+            policy = AlpaserveLLMReplacement(verbose=1)
         elif policy_name == "mp-ilp":
             policy = ModelParallelismILP(verbose=1)
         elif "mp-search" in policy_name:
@@ -267,10 +270,11 @@ def run_one_equal_model_case(case, mode,
                              relax_slo=False, protocol="http",
                              debug=False,
                              enable_batching=False,
+                             enable_interleave=False,
                              return_stats_and_placement=False):
     serving_case = get_equal_model_serving_case(case, prof_database)
     if mode == "simulate":
-        stats, placement = approximate_one_case(serving_case, debug=debug, enable_batching=enable_batching)
+        stats, placement = approximate_one_case(serving_case, debug=debug, enable_batching=enable_batching, enable_interleave=enable_interleave)
     else:
         stats, placement = run_one_case(serving_case, relax_slo=relax_slo,
                                         protocol=protocol, debug=debug)
@@ -293,6 +297,7 @@ def run_one_equal_model_case(case, mode,
 def run_equal_model_cases(cases, output_file=None,
                           mode="simulate", relax_slo=False, protocol="http",
                           debug_tstamp=False, parallel=False, enable_batching=False,
+                          enable_interleave=False,
                           prof_database=None, return_stats_and_placement=False):
     if parallel and not ray.is_initialized():
         ray.init(address="auto", namespace="alpa_serve",
@@ -309,7 +314,8 @@ def run_equal_model_cases(cases, output_file=None,
         results.append(run_one_case_(case, mode,
             output_file=output_file, relax_slo=relax_slo,
             protocol=protocol, debug=debug_tstamp,
-            enable_batching=enable_batching, prof_database=prof_database,
+            enable_batching=enable_batching, enable_interleave=enable_interleave, 
+            prof_database=prof_database,
             return_stats_and_placement=return_stats_and_placement))
 
     if parallel:

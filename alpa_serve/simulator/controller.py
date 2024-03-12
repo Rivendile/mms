@@ -310,7 +310,8 @@ def approximate_one_case(case: ServingCase,
                          warmup: int = DEFAULT_WARMUP,
                          debug: bool = False,
                          fast_stats: bool = False,
-                         enable_batching: bool = False):
+                         enable_batching: bool = False,
+                         enable_interleave: bool = False):
     """A fast simulator that only simulates one stage for a pipeline."""
     from alpa_serve.placement_policy.base_policy import (
         ModelPlacement, ModelPlacementWithReplacement)
@@ -342,7 +343,7 @@ def approximate_one_case(case: ServingCase,
     if isinstance(placement, ModelPlacement):
         (start, finish, good, model_num_requests, model_num_good_requests,
          group_num_requests, group_num_good_requests) = approximate_one_case_one_placement(
-             placement, model_names, prof_ress, model_ids, slos, workload.arrivals, num_tokens, enable_batching=enable_batching)
+             placement, model_names, prof_ress, model_ids, slos, workload.arrivals, num_tokens, enable_batching=enable_batching, enable_interleave = enable_interleave)
     elif isinstance(placement, ModelPlacementWithReplacement):
         arrivals = workload.arrivals
         change_times = placement.start_times[1:] + [inf]
@@ -359,7 +360,7 @@ def approximate_one_case(case: ServingCase,
                 (start, finish, good, model_num_requests, model_num_good_requests,
                  group_num_requests, group_num_good_requests) = approximate_one_case_one_placement(
                      placement.placements[pt], model_names, prof_ress,
-                     model_ids[start_i:i], slos[start_i:i], arrivals[start_i:i], enable_batching=enable_batching)
+                     model_ids[start_i:i], slos[start_i:i], arrivals[start_i:i], enable_batching=enable_batching, enable_interleave=enable_interleave)
                 start_list.append(start)
                 finish_list.append(finish)
                 good_list.append(good)
@@ -374,7 +375,7 @@ def approximate_one_case(case: ServingCase,
         (start, finish, good, model_num_requests, model_num_good_requests,
          group_num_requests, group_num_good_requests) = approximate_one_case_one_placement(
              placement.placements[pt], model_names, prof_ress,
-             model_ids[start_i:], slos[start_i:], arrivals[start_i:], enable_batching=enable_batching)
+             model_ids[start_i:], slos[start_i:], arrivals[start_i:], enable_batching=enable_batching, enable_interleave=enable_interleave)
         start_list.append(start)
         finish_list.append(finish)
         good_list.append(good)
@@ -408,7 +409,7 @@ def approximate_one_case(case: ServingCase,
     return stats, placement
 
 
-def approximate_one_case_one_placement(placement, model_names, prof_ress, model_ids, slos, arrivals, num_tokens, mixed = True, enable_batching = False):
+def approximate_one_case_one_placement(placement, model_names, prof_ress, model_ids, slos, arrivals, num_tokens, mixed = True, enable_batching = False, enable_interleave = False):
     # Load constants
     group_configs, group_models = placement.group_configs, placement.group_models
 
@@ -489,11 +490,17 @@ def approximate_one_case_one_placement(placement, model_names, prof_ress, model_
             group_num_requests, group_num_good_requests) = simulate_requests_mixed_batching(
                 finish, good, tstamps, model_ids, slos, m_id2g_id, g_id2m_id,
                 num_stages, stage_latency, num_requests)
-        else:
+        elif enable_interleave:
             (model_num_requests, model_num_good_requests,
-            group_num_requests, group_num_good_requests) = simulate_requests_mixed_naive(
+            group_num_requests, group_num_good_requests) = simulate_requests_mixed_interleave(
                 finish, good, tstamps, model_ids, slos, num_tokens, m_id2g_id,
                 num_stages, stage_latency, num_requests)
+        else:
+            (model_num_requests, model_num_good_requests,
+            group_num_requests, group_num_good_requests) = simulate_requests_mixed(
+                finish, good, tstamps, model_ids, slos, num_tokens, m_id2g_id,
+                num_stages, stage_latency, num_requests)
+            
     else:
         (model_num_requests, model_num_good_requests,
          group_num_requests, group_num_good_requests) = simulate_requests(
@@ -561,7 +568,7 @@ def simulate_requests(finish, good, tstamps, model_ids, slos, m_id2g_id,
 
 
 @numba.jit(nopython=True)
-def simulate_requests_mixed(finish, good, tstamps, model_ids, slos, m_id2g_id,
+def simulate_requests_mixed(finish, good, tstamps, model_ids, slos, m_id2g_id, num_tokens,
                             num_stages, stage_latency, num_requests):
     # num_stages: num_groups
     # stage_latency: num_models * num_groups * max_num_stages
@@ -579,7 +586,8 @@ def simulate_requests_mixed(finish, good, tstamps, model_ids, slos, m_id2g_id,
     tmp_time = np.zeros(max_num_stages, dtype=np.float64)
 
     for i in range(num_requests):
-        tstamp, m_id, slo = tstamps[i], model_ids[i], slos[i]
+        tstamp, m_id, slo, num_token = tstamps[i], model_ids[i], slos[i], num_tokens[i]
+        print(tstamp, m_id, slo, num_token, m_id2g_id[m_id])
 
         if m_id < 0:
             finish[i] = tstamp
@@ -605,9 +613,10 @@ def simulate_requests_mixed(finish, good, tstamps, model_ids, slos, m_id2g_id,
             continue
 
         t = tstamp
-        for k in range(num_stages[g_id]):
-            t = max(t, device_clocks[g_id][k]) + stage_latency[m_id][g_id][k]
-            tmp_time[k] = t
+        for _ in range(num_token):
+            for k in range(num_stages[g_id]):
+                t = max(t, device_clocks[g_id][k]) + stage_latency[m_id][g_id][k]
+                tmp_time[k] = t
 
         finish_time = t + fixed_overhead
         group_num_requests[g_id] += 1
@@ -631,7 +640,7 @@ def simulate_requests_mixed(finish, good, tstamps, model_ids, slos, m_id2g_id,
 
 # currently finish requests one by one, not interleave
 @numba.jit(nopython=True)
-def simulate_requests_mixed_naive(finish, good, tstamps, model_ids, slos, num_tokens, m_id2g_id,
+def simulate_requests_mixed_interleave(finish, good, tstamps, model_ids, slos, num_tokens, m_id2g_id,
                             num_stages, stage_latency, num_requests):
     # num_stages: num_groups
     # stage_latency: num_models * num_groups * max_num_stages
@@ -660,6 +669,7 @@ def simulate_requests_mixed_naive(finish, good, tstamps, model_ids, slos, num_to
                            "slo": slo if ii==num_token-1 else inf,
                            "num_token": num_token}
             com_requests.append(com_request)
+    com_requests.sort(key=lambda x:x["tstamp"])
     num_requests_pr = len(com_requests)
 
     for i in range(num_requests_pr):
@@ -690,10 +700,10 @@ def simulate_requests_mixed_naive(finish, good, tstamps, model_ids, slos, num_to
             continue
 
         t = tstamp
-        for _ in range(num_token):
-            for k in range(num_stages[g_id]):
-                t = max(t, device_clocks[g_id][k]) + stage_latency[m_id][g_id][k]
-                tmp_time[k] = t
+        # for _ in range(num_token):
+        for k in range(num_stages[g_id]):
+            t = max(t, device_clocks[g_id][k]) + stage_latency[m_id][g_id][k]
+            tmp_time[k] = t
 
         finish_time = t + fixed_overhead
         if slo<inf:

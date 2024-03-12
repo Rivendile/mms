@@ -30,6 +30,7 @@ if __name__ == "__main__":
     parser.add_argument("--cv", type=float, default=4)
     parser.add_argument('--duration', type=float, default=200)
     parser.add_argument('--enable-batching', action='store_true')
+    parser.add_argument('--enable-interleave', action='store_true')
     parser.add_argument("--large-models", action="store_true")
 
     args = parser.parse_args()
@@ -122,5 +123,6 @@ if __name__ == "__main__":
         run_equal_model_cases(cases[start_case:end_case],
                               output_file=output_file,
                               mode=args.mode, parallel=args.parallel,
-                              enable_batching=args.enable_batching)
+                              enable_batching=args.enable_batching,
+                              enable_interleave=args.enable_interleave)
     

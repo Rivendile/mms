@@ -10,4 +10,4 @@ from alpa_serve.placement_policy.selective_replication import (
     SelectiveReplicationUniform, SelectiveReplicationSearch,
     SelectiveReplicationReplacement)
 from alpa_serve.placement_policy.alpaserve_llm import(
-    AlpaserveLLMGreedy)
+    AlpaserveLLMGreedy, AlpaserveLLMReplacement)

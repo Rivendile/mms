@@ -195,10 +195,14 @@ class PlacementEvaluator:
                                cluster_env: ClusterEnv,
                                workload: Workload,
                                method: str):
-        if method == "fast_simulator":
+        if "fast_simulator" in method:
             fast_simulator = True
         else:
             fast_simulator = False
+        if "interleave" in method:
+            interleave_flag = True
+        else:
+            interleave_flag = False
 
         def register_models(controller):
             for i, data in enumerate(model_datas):
@@ -220,7 +224,7 @@ class PlacementEvaluator:
 
         serving_case = ServingCase(register_models, generate_workload, place_models)
         if fast_simulator:
-            stats, _ = approximate_one_case(serving_case, fast_stats=True)
+            stats, _ = approximate_one_case(serving_case, fast_stats=True, enable_interleave=interleave_flag)
         else:
             stats, _ = simulate_one_case(serving_case)
         num_replicas = sum(len(x) for x in sol.group_models)

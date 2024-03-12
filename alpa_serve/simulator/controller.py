@@ -322,7 +322,7 @@ def approximate_one_case(case: ServingCase,
     workload = generate_workload()
 
     if workload.enable_simulator_cache and workload.cached_data:
-        model_ids, slos, model_names, prof_ress = workload.cached_data
+        model_ids, slos, model_names, prof_ress, num_tokens = workload.cached_data
         placement = place_models(None)
     else:
         # Launch the controller
@@ -338,7 +338,8 @@ def approximate_one_case(case: ServingCase,
         num_tokens = np.array([r.num_tokens for r in workload.requests], dtype=np.int32)
 
         if workload.enable_simulator_cache:
-            workload.cached_data = (model_ids, slos, model_names, prof_ress)
+            workload.cached_data = (model_ids, slos, model_names, prof_ress, num_tokens)
+
 
     if isinstance(placement, ModelPlacement):
         (start, finish, good, model_num_requests, model_num_good_requests,
@@ -360,7 +361,7 @@ def approximate_one_case(case: ServingCase,
                 (start, finish, good, model_num_requests, model_num_good_requests,
                  group_num_requests, group_num_good_requests) = approximate_one_case_one_placement(
                      placement.placements[pt], model_names, prof_ress,
-                     model_ids[start_i:i], slos[start_i:i], arrivals[start_i:i], enable_batching=enable_batching, enable_interleave=enable_interleave)
+                     model_ids[start_i:i], slos[start_i:i], arrivals[start_i:i], num_tokens[start_i:i], enable_batching=enable_batching, enable_interleave=enable_interleave)
                 start_list.append(start)
                 finish_list.append(finish)
                 good_list.append(good)
@@ -375,7 +376,7 @@ def approximate_one_case(case: ServingCase,
         (start, finish, good, model_num_requests, model_num_good_requests,
          group_num_requests, group_num_good_requests) = approximate_one_case_one_placement(
              placement.placements[pt], model_names, prof_ress,
-             model_ids[start_i:], slos[start_i:], arrivals[start_i:], enable_batching=enable_batching, enable_interleave=enable_interleave)
+             model_ids[start_i:], slos[start_i:], arrivals[start_i:], num_tokens[start_i:], enable_batching=enable_batching, enable_interleave=enable_interleave)
         start_list.append(start)
         finish_list.append(finish)
         good_list.append(good)
@@ -568,7 +569,7 @@ def simulate_requests(finish, good, tstamps, model_ids, slos, m_id2g_id,
 
 
 @numba.jit(nopython=True)
-def simulate_requests_mixed(finish, good, tstamps, model_ids, slos, m_id2g_id, num_tokens,
+def simulate_requests_mixed(finish, good, tstamps, model_ids, slos, num_tokens, m_id2g_id,
                             num_stages, stage_latency, num_requests):
     # num_stages: num_groups
     # stage_latency: num_models * num_groups * max_num_stages
@@ -587,7 +588,8 @@ def simulate_requests_mixed(finish, good, tstamps, model_ids, slos, m_id2g_id, n
 
     for i in range(num_requests):
         tstamp, m_id, slo, num_token = tstamps[i], model_ids[i], slos[i], num_tokens[i]
-        print(tstamp, m_id, slo, num_token, m_id2g_id[m_id])
+        # print(tstamp, m_id, slo, num_token)
+        # print("!!!!!!!!!")
 
         if m_id < 0:
             finish[i] = tstamp
@@ -599,6 +601,7 @@ def simulate_requests_mixed(finish, good, tstamps, model_ids, slos, m_id2g_id, n
         # Select group id
         g_id = -1
         min_device_clock = inf
+        # print(m_id2g_id[m_id])
         for j in m_id2g_id[m_id]:
             if j < 0:
                 break
@@ -613,19 +616,23 @@ def simulate_requests_mixed(finish, good, tstamps, model_ids, slos, m_id2g_id, n
             continue
 
         t = tstamp
+        t_flag = True
         for _ in range(num_token):
             for k in range(num_stages[g_id]):
                 t = max(t, device_clocks[g_id][k]) + stage_latency[m_id][g_id][k]
                 tmp_time[k] = t
+            if t+fixed_overhead-tstamp>slo:
+                t_flag = False
+                break
+            for k in range(num_stages[g_id]):
+                device_clocks[g_id][k] = tmp_time[k]
 
         finish_time = t + fixed_overhead
         group_num_requests[g_id] += 1
 
-        if finish_time - tstamp <= slo:
+        if t_flag and finish_time - tstamp <= slo:
             finish[i] = finish_time
             good[i] = True
-            for k in range(num_stages[g_id]):
-                device_clocks[g_id][k] = tmp_time[k]
             group_num_good_requests[g_id] += 1
             model_num_good_requests[m_id] += 1
         else:
@@ -638,8 +645,7 @@ def simulate_requests_mixed(finish, good, tstamps, model_ids, slos, m_id2g_id, n
     return (model_num_requests, model_num_good_requests,
             group_num_requests, group_num_good_requests)
 
-# currently finish requests one by one, not interleave
-@numba.jit(nopython=True)
+# @numba.jit(nopython=True)
 def simulate_requests_mixed_interleave(finish, good, tstamps, model_ids, slos, num_tokens, m_id2g_id,
                             num_stages, stage_latency, num_requests):
     # num_stages: num_groups
@@ -666,23 +672,29 @@ def simulate_requests_mixed_interleave(finish, good, tstamps, model_ids, slos, n
         for ii in range(num_token):
             com_request = {"tstamp": tstamp+ii*arrival_interval,
                            "m_id": m_id,
-                           "slo": slo if ii==num_token-1 else inf,
-                           "num_token": num_token}
+                           "slo": slo,
+                           "num_token": num_token,
+                           "ori_id": i,
+                           "last_token": True if ii==num_token-1 else False,
+                           "ori_stamp": tstamp}
             com_requests.append(com_request)
     com_requests.sort(key=lambda x:x["tstamp"])
     num_requests_pr = len(com_requests)
+    request_pass = np.zeros(num_requests, dtype=np.int32)
 
     for i in range(num_requests_pr):
-        tstamp, m_id, slo, num_token = com_requests[i]["tstamp"], com_requests[i]["m_id"], com_requests[i]["slo"], com_requests[i]["num_token"]
+        tstamp, m_id, slo, num_token, ori_id, last_token, ori_stamp = com_requests[i]["tstamp"], int(com_requests[i]["m_id"]), com_requests[i]["slo"], com_requests[i]["num_token"], com_requests[i]["ori_id"], com_requests[i]["last_token"], com_requests[i]["ori_stamp"]
 
         if m_id < 0:
-            finish[i] = tstamp
-            good[i] = False
+            finish[ori_id] = ori_stamp
+            good[ori_id] = False
             continue
         
-        if slo<inf:
+        if last_token==True:
             model_num_requests[m_id] += 1
 
+        if request_pass[ori_id] == 1:
+            continue
         # Select group id
         g_id = -1
         min_device_clock = inf
@@ -695,32 +707,39 @@ def simulate_requests_mixed_interleave(finish, good, tstamps, model_ids, slos, n
                 g_id = j
 
         if g_id < 0:
-            finish[i] = tstamp
-            good[i] = False
+            finish[ori_id] = ori_stamp
+            good[ori_id] = False
             continue
 
         t = tstamp
-        # for _ in range(num_token):
         for k in range(num_stages[g_id]):
             t = max(t, device_clocks[g_id][k]) + stage_latency[m_id][g_id][k]
             tmp_time[k] = t
 
+        if t + fixed_overhead - ori_stamp > slo:
+            finish[ori_id] = ori_stamp
+            good[ori_id] = False
+            request_pass[ori_id] = 1
+            continue
+        
+        for k in range(num_stages[g_id]):
+            device_clocks[g_id][k] = tmp_time[k]
+        
         finish_time = t + fixed_overhead
-        if slo<inf:
+        if last_token==True:
             group_num_requests[g_id] += 1
 
-        if finish_time - tstamp <= slo:
-            finish[i] = finish_time
-            good[i] = True
-            for k in range(num_stages[g_id]):
-                device_clocks[g_id][k] = tmp_time[k]
-            if slo<inf:
-                group_num_good_requests[g_id] += 1
-                model_num_good_requests[m_id] += 1
-        else:
-            finish[i] = tstamp
-            good[i] = False
+            if finish_time - ori_stamp <= slo:
+                finish[ori_id] = finish_time
+                good[ori_id] = True
+                if slo<inf:
+                    group_num_good_requests[g_id] += 1
+                    model_num_good_requests[m_id] += 1
+            else:
+                finish[ori_id] = tstamp
+                good[ori_id] = False
 
+    # del com_requests
     # print("model_num_requests", model_num_requests)
     # print("group_num_requests", group_num_requests)
     # assert np.sum(model_num_requests) == np.sum(group_num_requests)

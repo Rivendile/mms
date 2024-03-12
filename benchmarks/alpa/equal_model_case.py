@@ -42,7 +42,10 @@ def get_equal_model_serving_case(case, prof_database=None):
     num_models = num_models
 
     model_names = [f"m{i}" for i in range(num_models)]
-    model_types = [model_type] * num_models
+    if model_type=="mixed":
+        model_types = ["llama2-7b"]* (num_models//2) + ["opt-13b"]*(num_models - num_models//2)
+    else:
+        model_types = [model_type] * num_models
     if model_type == "bert-103.5b":
         single_latency = {model_type: 4.6}
     # elif model_type == "llama2-7b":
@@ -57,7 +60,7 @@ def get_equal_model_serving_case(case, prof_database=None):
         single_latency = {
         model_type: sum(prof_database.get(model_type).para_dict[ParallelConfig(1,1,1)
         ].latency[1]) for model_type in set(model_types)}
-    slos = [slo_scale * single_latency[model_type]] * num_models
+    slos = [slo_scale * single_latency[mt] for mt in model_types]
 
     if rate_distribution == "uniform":
         rates = [total_rate / num_models] * num_models
@@ -184,6 +187,9 @@ def get_equal_model_serving_case(case, prof_database=None):
                 model_names[i], 0, duration, slo=slos[i], seed=i))
         train_workload = Workload.merge(*ws)
 
+    # print(train_workload.arrivals)
+    # print([x.num_tokens for x in train_workload.requests])
+    # exit()
 
     def register_models(controller):
         is_simulator = isinstance(controller, (Controller, DummyController))
@@ -231,7 +237,7 @@ def get_equal_model_serving_case(case, prof_database=None):
             policy = AlpaserveLLMGreedy(verbose=1)
         elif "llm-greedy-replace" in policy_name:
             interval = int(policy_name.split("-")[3])
-            policy = AlpaserveLLMReplacement(verbose=1)
+            policy = AlpaserveLLMReplacement(replacement_interval=interval, verbose=1)
         elif policy_name == "mp-ilp":
             policy = ModelParallelismILP(verbose=1)
         elif "mp-search" in policy_name:
@@ -263,7 +269,7 @@ _DATA_HEADS = ("exp_name",
                "total_rate", "rate_distribution",
                "arrival_process", "arrival_process_kwargs",
                "slo_scale", "duration", "policy_name", "train_start", "train_end", "test_start", "test_end",
-               "placement", "goodput", "mode")
+               "placement", "goodput", "latency_mean", "mode")
 
 def run_one_equal_model_case(case, mode,
                              output_file=None, prof_database=None,
@@ -272,6 +278,7 @@ def run_one_equal_model_case(case, mode,
                              enable_batching=False,
                              enable_interleave=False,
                              return_stats_and_placement=False):
+    # print("123123123")
     serving_case = get_equal_model_serving_case(case, prof_database)
     if mode == "simulate":
         stats, placement = approximate_one_case(serving_case, debug=debug, enable_batching=enable_batching, enable_interleave=enable_interleave)
@@ -285,7 +292,7 @@ def run_one_equal_model_case(case, mode,
     Workload.print_stats(stats)
     print(f"group #req: {stats.group_num_requests}")
 
-    res = (placement, round(stats.goodput, 3), mode)
+    res = (placement, round(stats.goodput, 3), round(stats.latency_mean, 3), mode)
     values = tuple(case) + res
 
     if output_file is not None:

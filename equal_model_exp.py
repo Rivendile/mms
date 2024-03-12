@@ -20,7 +20,7 @@ if __name__ == "__main__":
                               "goodput_vs_slo", "goodput_vs_rate", "goodput_vs_cv",
                               "num_devices_vs_num_models", "metrics_vs_arrival_rates"])
     parser.add_argument("--model-type", type=str, default="bert-1.3b",
-                        choices=["bert-1.3b", "bert-2.6b", "bert-6.7b", "bert-103.5b", "llama2-7b"])
+                        choices=["bert-1.3b", "bert-2.6b", "bert-6.7b", "bert-103.5b", "llama2-7b", "opt-13b", "mixed"])
     parser.add_argument("--mem-budget", type=int, default=40)
     parser.add_argument("--workload", type=str, default="synthetic",
                         choices=["synthetic", "azure_v1", "azure_v2"])
@@ -40,7 +40,7 @@ if __name__ == "__main__":
 
     # choices: {"sr-greedy", "sr-ilp", "mp-ilp", "mp-greedy-2", "mp-greedy-8"}
     if model_type == "llama2-7b" or model_type == "mixed":
-        policies = ["mp-search", "llm-greedy"]
+        policies = ["llm-greedy", "llm-greedy-replace-600"] #"llm-greedy" "llm-greedy-replace-600"
 
     # workload config
     if args.workload == "azure_v1":

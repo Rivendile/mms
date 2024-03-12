@@ -12,7 +12,8 @@ import ray
 
 from alpa_serve.profiling import ParallelConfig
 from alpa_serve.placement_policy.base_policy import (
-    BasePlacementPolicy, ModelData, ClusterEnv, ModelPlacement,
+    BasePlacementPolicy, ModelData, ClusterEnv, ModelPlacement, 
+    ModelPlacementWithReplacement,
     PlacementEvaluator, gen_train_workload,
     replica_placement_round_robin, replica_placement_fast_greedy_llm,
     replica_placement_fast_greedy, replica_placement_beam_search,
@@ -306,6 +307,7 @@ class AlpaserveLLMGreedy(BasePlacementPolicy):
 class AlpaserveLLMReplacement(BasePlacementPolicy):
     
     def __init__(self,
+                 replacement_interval: int,
                  max_bs: int = 1,
                  max_pp: int = 8,
                  max_op: int = 4,
@@ -322,6 +324,7 @@ class AlpaserveLLMReplacement(BasePlacementPolicy):
         self.beam_size = 3
         self.use_evo_search = use_evo_search
         self.use_separation = use_separation
+        self.replacement_interval = replacement_interval
 
         self.evaluator_method = "fast_simulator"
         self.parallel_evaluator = False
@@ -427,45 +430,50 @@ class AlpaserveLLMReplacement(BasePlacementPolicy):
         # Generate workloads
         if train_workload is None:
             train_workload = gen_train_workload(model_datas)
+        
+        ws = train_workload.split_time_interval(self.replacement_interval)
+        
+        start_times = []
+        placements = []
+        for i in range(len(ws)):
 
-        best_sol, _ = self.solve_placement_one_eco(model_datas, cluster_env, train_workload)
+            best_sol, _ = self.solve_placement_one_eco(model_datas, cluster_env, ws[i])
 
-        # Separate unequal model
-        if self.use_separation:
-            eco_separations, model_id_map = self.enumerate_separations(model_datas, cluster_env)
-            print("number of combinations: ", len(eco_separations))
+            # Separate unequal model, default false
+            if self.use_separation:
+                eco_separations, model_id_map = self.enumerate_separations(model_datas, cluster_env)
+                print("number of combinations: ", len(eco_separations))
 
-            parallel = False
-            if parallel:
-                func = ray.remote(solve_separation_placement).remote
-            else:
-                func = solve_separation_placement
+                parallel = False
+                if parallel:
+                    func = ray.remote(solve_separation_placement).remote
+                else:
+                    func = solve_separation_placement
 
-            sols = []
-            for eco_separation in eco_separations:
-                sols.append(func(self, eco_separation, model_id_map, train_workload))
+                sols = []
+                for eco_separation in eco_separations:
+                    sols.append(func(self, eco_separation, model_id_map, train_workload))
 
-            if parallel:
-                sols = ray.get(sols)
+                if parallel:
+                    sols = ray.get(sols)
 
-            evaluator = PlacementEvaluator(model_datas, cluster_env, train_workload,
-                self.evaluator_method, self.parallel_evaluator)
-            scores = evaluator.get_scores(sols)
-            best_idx = np.argmax(scores)
+                evaluator = PlacementEvaluator(model_datas, cluster_env, train_workload,
+                    self.evaluator_method, self.parallel_evaluator)
+                scores = evaluator.get_scores(sols)
+                best_idx = np.argmax(scores)
 
-            evaluator = PlacementEvaluator(model_datas, cluster_env, train_workload,
-                self.evaluator_method, self.parallel_evaluator)
-            score_mixed = evaluator.get_scores([best_sol])[0]
+                evaluator = PlacementEvaluator(model_datas, cluster_env, train_workload,
+                    self.evaluator_method, self.parallel_evaluator)
+                score_mixed = evaluator.get_scores([best_sol])[0]
 
-            print(f"score_mixed: {score_mixed:.3f}, score_separate: {scores[best_idx]:.3f}")
-            if scores[best_idx] > score_mixed:
-                best_sol = sols[best_idx]
+                print(f"score_mixed: {score_mixed:.3f}, score_separate: {scores[best_idx]:.3f}")
+                if scores[best_idx] > score_mixed:
+                    best_sol = sols[best_idx]
+            
+            start_times.append(ws[i].arrivals[0])
+            placements.append(best_sol)
 
-        if self.use_evo_search:
-            best_sol = evolutionary_search(
-                [best_sol], model_datas, cluster_env,
-                evaluator, 200, self.verbose)
-        return best_sol, {}
+        return ModelPlacementWithReplacement(start_times, placements), None
 
 
     # todo: may change for llm

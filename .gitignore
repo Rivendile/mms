@@ -6,7 +6,7 @@ chrome_trace/
 *.txt
 *.png
 *.pdf
-*.sh
+# *.sh
 *.zip
 
 # Python cache

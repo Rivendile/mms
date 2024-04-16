@@ -160,6 +160,7 @@ class GammaProcess(ArrivalProcess):
         for i in range(tokens_data.size):
             num_tokens.append(max(1, int(tokens_data[i])))
         assert len(ticks) == len(num_tokens)
+        # print(ticks)
 
         return ticks, num_tokens
 
@@ -234,7 +235,7 @@ class UniformMMPP(ArrivalProcess):
         return Workload(ticks, [
             Request(model_name, None, slo, i, {}) for i in range(n_requests)])
 
-
+# todo: not for llm yet
 class ParetoProcess:
     def __init__(self, shape, scale, loc = 0.0):
         self.shape = shape

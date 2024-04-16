@@ -32,7 +32,7 @@ EqualModelCase = namedtuple("EqualModelCase", [
 
 def get_equal_model_serving_case(case, prof_database=None):
     if prof_database is None:
-        prof_database = ProfilingDatabase("/data/zyh/mms/profiling_result_llama_opt.pkl")
+        prof_database = ProfilingDatabase("/Users/test/Desktop/Rivendell/projects/llm_serving/mms/profiling_result_llama_opt.pkl")
 
     (exp_name, num_devices, mem_budget, model_type, num_models,
      total_rate, rate_distribution, arrival_process, arrival_process_kwargs,
@@ -130,6 +130,7 @@ def get_equal_model_serving_case(case, prof_database=None):
         del azure_v2_trace
         ws = []
         for model_name, slo in zip(model_names, slos):
+            print(model_name, slo, train_replays[model_name])
             ws.append(train_replays[model_name].to_workload(slo))
         train_workload = Workload.merge(*ws)
 
@@ -269,7 +270,7 @@ _DATA_HEADS = ("exp_name",
                "total_rate", "rate_distribution",
                "arrival_process", "arrival_process_kwargs",
                "slo_scale", "duration", "policy_name", "train_start", "train_end", "test_start", "test_end",
-               "placement", "goodput", "latency_mean", "mode")
+               "placement", "goodput", "latency_mean", "req_per_sec", "throughput", "mode")
 
 def run_one_equal_model_case(case, mode,
                              output_file=None, prof_database=None,
@@ -278,7 +279,6 @@ def run_one_equal_model_case(case, mode,
                              enable_batching=False,
                              enable_interleave=False,
                              return_stats_and_placement=False):
-    # print("123123123")
     serving_case = get_equal_model_serving_case(case, prof_database)
     if mode == "simulate":
         stats, placement = approximate_one_case(serving_case, debug=debug, enable_batching=enable_batching, enable_interleave=enable_interleave)
@@ -292,7 +292,9 @@ def run_one_equal_model_case(case, mode,
     Workload.print_stats(stats)
     print(f"group #req: {stats.group_num_requests}")
 
-    res = (placement, round(stats.goodput, 3), round(stats.latency_mean, 3), mode)
+
+    stat_tput = np.sum([stat.throughput for stat in stats.per_model_stats])
+    res = (placement, round(stats.goodput, 3), round(stats.latency_mean, 3), round(stats.request_rate, 3), round(stat_tput, 3), mode)
     values = tuple(case) + res
 
     if output_file is not None:

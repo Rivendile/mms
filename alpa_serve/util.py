@@ -22,7 +22,7 @@ GB = 1 << 30
 eps = 1e-6
 inf = 1e100
 num_token_normal_mean = 20
-num_token_normal_var = 10
+num_token_normal_var = 30
 arrival_interval = 1e-2
 # max_bss = {"llama2-7b": 256, "opt-13b": 128}
 

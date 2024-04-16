@@ -40,7 +40,10 @@ if __name__ == "__main__":
 
     # choices: {"sr-greedy", "sr-ilp", "mp-ilp", "mp-greedy-2", "mp-greedy-8"}
     if model_type == "llama2-7b" or model_type == "mixed":
-        policies = ["llm-greedy", "llm-greedy-replace-600"] #"llm-greedy" "llm-greedy-replace-600"
+        if args.enable_interleave:
+            policies = ["llm-greedy", "llm-greedy-replace-600"] #"llm-greedy" "llm-greedy-replace-600"
+        else:
+            policies = ["llm-greedy"]
 
     # workload config
     if args.workload == "azure_v1":
@@ -103,7 +106,7 @@ if __name__ == "__main__":
     if "metrics_vs_arrival_rates" in experiments:
         print("=== Running metrics vs. rate_scale ===")
         exp_name = "metrics_vs_arrival_rates"
-        for rate_scale in [2e-3]:#rate_scales:
+        for rate_scale in rate_scales: #[fixed_rate_scale]:  rate_scales: 
             for policy_name in policies:
                 arrival_process_kwargs = {"rate_scale": rate_scale,
                                         "cv_scale": fixed_cv_scale,

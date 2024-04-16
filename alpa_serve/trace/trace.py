@@ -646,7 +646,7 @@ class Trace:
                             # scale them
                             arrival_rate *= rate_scale_factor
                             cv *= cv_scale_factor
-                            distributions[model].append(GammaProcess(arrival_rate, cv))
+                            distributions[model].append(GammaProcess(arrival_rate, cv, "Normal"))
                         except ValueError as ve:
                             warnings.warn("Failed to fit a gamma distribution.")
                             distributions[model].append(None)

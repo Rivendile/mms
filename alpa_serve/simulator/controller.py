@@ -336,10 +336,11 @@ def approximate_one_case(case: ServingCase,
         model_ids = np.array([name2model_id.get(r.model_name, -1) for r in workload.requests], dtype=np.int32)
         slos = np.array([r.slo for r in workload.requests], dtype=np.float32)
         num_tokens = np.array([r.num_tokens for r in workload.requests], dtype=np.int32)
+        # print("num_tokens:", num_tokens)
+        # print(workload.requests)
 
         if workload.enable_simulator_cache:
             workload.cached_data = (model_ids, slos, model_names, prof_ress, num_tokens)
-
 
     if isinstance(placement, ModelPlacement):
         (start, finish, good, model_num_requests, model_num_good_requests,
@@ -388,8 +389,11 @@ def approximate_one_case(case: ServingCase,
         start = np.concatenate(start_list)
         finish = np.concatenate(finish_list)
         good = np.concatenate(good_list)
-        group_num_requests = np.sum(group_num_requests_list, axis=0)
-        group_num_good_requests = np.sum(group_num_good_requests_list, axis=0)
+        # changed for various length group
+        # group_num_requests = np.sum(group_num_requests_list, axis=0)
+        # group_num_good_requests = np.sum(group_num_good_requests_list, axis=0)
+        group_num_requests = group_num_requests_list[0]
+        group_num_good_requests = group_num_good_requests_list[0]
         model_num_requests = np.sum(model_num_requests_list, axis=0)
         model_num_good_requests = np.sum(model_num_good_requests_list, axis=0)
 
@@ -419,7 +423,7 @@ def approximate_one_case_one_placement(placement, model_names, prof_ress, model_
     num_requests = len(arrivals)
     num_replicas = [0] * num_models
     m_id2g_id = np.full((num_models, num_groups), -1, dtype=np.int32)
-    print(num_groups, num_models, group_models, group_configs)
+    # print(num_groups, num_models, group_models, group_configs)
     for g_id, m_ids in enumerate(group_models):
         for m_id in m_ids:
             m_id2g_id[m_id][num_replicas[m_id]] = g_id
@@ -582,7 +586,7 @@ def simulate_requests_mixed(finish, good, tstamps, model_ids, slos, num_tokens, 
     group_num_good_requests = np.zeros(num_groups, dtype=np.int32)
     model_num_requests = np.zeros(num_models, dtype=np.int32)
     model_num_good_requests = np.zeros(num_models, dtype=np.int32)
-    fixed_overhead = 0.011 # Todo: may need refine
+    fixed_overhead = 0 # 0.011 Todo: may need refine
 
     tmp_time = np.zeros(max_num_stages, dtype=np.float64)
 
@@ -659,7 +663,7 @@ def simulate_requests_mixed_interleave(finish, good, tstamps, model_ids, slos, n
     group_num_good_requests = np.zeros(num_groups, dtype=np.int32)
     model_num_requests = np.zeros(num_models, dtype=np.int32)
     model_num_good_requests = np.zeros(num_models, dtype=np.int32)
-    fixed_overhead = 0.011 # Todo: may need refine
+    fixed_overhead = 0 # 0.011 Todo: may need refine
 
     tmp_time = np.zeros(max_num_stages, dtype=np.float64)
     
@@ -675,10 +679,11 @@ def simulate_requests_mixed_interleave(finish, good, tstamps, model_ids, slos, n
                            "slo": slo,
                            "num_token": num_token,
                            "ori_id": i,
+                           "req_id": len(com_requests),
                            "last_token": True if ii==num_token-1 else False,
                            "ori_stamp": tstamp}
             com_requests.append(com_request)
-    com_requests.sort(key=lambda x:x["tstamp"])
+    com_requests.sort(key=lambda x: (x["tstamp"], x["req_id"]))
     num_requests_pr = len(com_requests)
     request_pass = np.zeros(num_requests, dtype=np.int32)
 
